@@ -1,0 +1,58 @@
+#!/usr/bin/env use
+
+use @gh/tayadev/template
+
+die() {
+    printf '%s\n' "${0##*/}: $*"
+    exit 1
+}
+
+usage() { echo "usage: ${0##*/} [-i input_directory] [-o output_directory] [-v] [-h]"; }
+
+get_header_field() { grep -Pom1 "(?<=$1: ).*" "$2"; }
+urlescape() { echo "$*" | sed 's/ /_/g'; }
+
+parse_metadata() {
+    title=$(get_header_field Title "$1" || basename -s .md "$1")
+    filename=$(urlescape "$title").html
+}
+
+main() {
+    src_dir="src"
+    dst_dir="dst"
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|*help) usage; exit 0;;
+            -v|*version) printf '%s\n' "${0##*/}: v git" && exit 0;;
+            -i) src_dir=$2;shift;;
+            -o) dst_dir=$2;shift;;
+            *) usage; die "unrecognized option '$1'";;
+        esac
+        shift
+    done
+
+    home_template="$(cat $src_dir/home_template.html)"
+    post_template="$(cat $src_dir/post_template.html)"
+    toc_entry_template="$(cat $src_dir/toc_entry_template.html)"
+
+    test -d "$src_dir" || die "Couldn't read input directory '$src_dir'"
+    mkdir -p "$dst_dir" || die "Couldn't create output directory '$dst_dir'"
+
+    tmp=$(mktemp)
+    find "$src_dir" -name "*.md" >"$tmp"
+    while read -r file; do
+        parse_metadata "$file"
+        post=$(lowdown "$file")
+        template "$post_template" > "$dst_dir/$filename"
+        find "$(dirname "$file")" -type f ! -name "*.md" ! -name "*_template.html" -exec sh -c "cp \"\$1\" \"$dst_dir\"/" -- {} \;
+
+        [ -n "$toc" ] && toc="$toc<br>"
+        toc="$toc$(template "$toc_entry_template" title filename)"
+    done <"$tmp"
+    rm "$tmp"
+
+    template "$home_template" > "$dst_dir/index.html"
+}
+
+main "$@"
